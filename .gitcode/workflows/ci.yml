@@ -1,0 +1,204 @@
+# Copyright (C) 2026-2026 Huawei Technologies Co., Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# UT / ST / E2E on GitCode workflows, the counterpart of
+# .github/workflows/ci.yml. Both call the same repository entry points
+# documented in .ci/README.md, so neither platform can drift into its own test
+# definition. Only the hermetic layers run here; ci:st:real, ci:e2e:real,
+# ci:st:npu and ci:e2e:legacy need credentials or hardware and stay behind
+# their CI_ALLOW_* gates.
+#
+# Three runner differences shape every job below:
+#   - checkout-action places the source in ./repo_workspace on the documented
+#     sample runner. Each command enters it when it exists and otherwise stays
+#     put, so the jobs work under either layout.
+#   - Only the toolchain that setup-node provides is assumed present. pnpm, uv
+#     and bubblewrap are installed per job, and PATH additions are re-exported
+#     in each step because they do not survive the step boundary.
+#   - There is no artifact upload action, so each job prints its own evidence.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ut:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: checkout-action@0.0.1
+
+      - name: Use Node.js
+        uses: setup-node@0.0.1
+        with:
+          node-version: '22.19.0'
+
+      - name: Provision the toolchain
+        run: |
+          set -eu
+          # The hosted image may or may not run the job as root.
+          as_root() {
+            if [ "$(id -u)" -eq 0 ]; then "$@"
+            elif command -v sudo >/dev/null 2>&1; then sudo "$@"
+            else echo "no route to root for: $*" >&2; return 1
+            fi
+          }
+          if [ -d repo_workspace ]; then cd repo_workspace; fi
+          # packageManager in package.json pins the version; corepack honours it.
+          export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          uv --version
+          # ut-runner executes real bubblewrap, which needs unprivileged user
+          # namespaces. Ubuntu 24.04 denies those by AppArmor policy; clearing
+          # it is a no-op on 22.04. Fail here with a clear message rather than
+          # letting the Runner suite report a host limitation as a product
+          # failure.
+          if ! command -v bwrap >/dev/null 2>&1; then
+            as_root apt-get update
+            as_root apt-get install --yes --no-install-recommends bubblewrap
+          fi
+          as_root sysctl --write kernel.apparmor_restrict_unprivileged_userns=0 || true
+          bwrap --ro-bind / / --dev /dev true
+          bwrap --version
+
+      - name: Run UT
+        run: |
+          set -eu
+          export PATH="$HOME/.local/bin:$PATH"
+          if [ -d repo_workspace ]; then cd repo_workspace; fi
+          # Both defaults live inside the .ci image only. The runtime directory
+          # stays outside the checkout so the Runner sandbox never mounts over
+          # it.
+          export CI_RESULTS_DIR="$PWD/.ci-results"
+          export CI_RUNTIME_DIR="$HOME/ci-runtime-ut"
+          pnpm ci:ut
+
+      - name: Report UT results
+        run: |
+          if [ -d repo_workspace ]; then cd repo_workspace; fi
+          tail -n 40 .ci-results/ut/run.log 2>/dev/null || echo "no run.log produced"
+
+  st:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: checkout-action@0.0.1
+
+      - name: Use Node.js
+        uses: setup-node@0.0.1
+        with:
+          node-version: '22.19.0'
+
+      - name: Provision the toolchain
+        run: |
+          set -eu
+          if [ -d repo_workspace ]; then cd repo_workspace; fi
+          export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          uv --version
+
+      # The hermetic agent loop drives a scripted local endpoint and performs a
+      # real workspace tool round trip; no sandbox and no model credential.
+      - name: Run ST
+        run: |
+          set -eu
+          export PATH="$HOME/.local/bin:$PATH"
+          if [ -d repo_workspace ]; then cd repo_workspace; fi
+          export CI_RESULTS_DIR="$PWD/.ci-results"
+          export CI_RUNTIME_DIR="$HOME/ci-runtime-st"
+          pnpm ci:st
+
+      - name: Report ST results
+        run: |
+          if [ -d repo_workspace ]; then cd repo_workspace; fi
+          tail -n 40 .ci-results/st/run.log 2>/dev/null || echo "no run.log produced"
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: checkout-action@0.0.1
+
+      - name: Use Node.js
+        uses: setup-node@0.0.1
+        with:
+          node-version: '22.19.0'
+
+      - name: Provision the toolchain
+        run: |
+          set -eu
+          as_root() {
+            if [ "$(id -u)" -eq 0 ]; then "$@"
+            elif command -v sudo >/dev/null 2>&1; then sudo "$@"
+            else echo "no route to root for: $*" >&2; return 1
+            fi
+          }
+          if [ -d repo_workspace ]; then cd repo_workspace; fi
+          export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          uv --version
+          # Chromium needs the same unprivileged user namespaces as the sandbox.
+          if ! command -v bwrap >/dev/null 2>&1; then
+            as_root apt-get update
+            as_root apt-get install --yes --no-install-recommends bubblewrap
+          fi
+          as_root sysctl --write kernel.apparmor_restrict_unprivileged_userns=0 || true
+          bwrap --version
+
+      - name: Run mocked E2E
+        run: |
+          set -eu
+          export PATH="$HOME/.local/bin:$PATH"
+          if [ -d repo_workspace ]; then cd repo_workspace; fi
+          export CI_RESULTS_DIR="$PWD/.ci-results"
+          export CI_RUNTIME_DIR="$HOME/ci-runtime-e2e"
+          pnpm ci:e2e
+
+      - name: Report the E2E outcome
+        run: |
+          # Playwright exits 0 on a skip, so a green job can still hide a
+          # journey that never executed. Print the counts and every title that
+          # did not pass.
+          if [ -d repo_workspace ]; then cd repo_workspace; fi
+          results=.ci-results/e2e/test-results/results.json
+          if [ ! -f "$results" ]; then echo "no results.json produced"; exit 0; fi
+          node -e '
+            const fs = require("node:fs");
+            const report = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const stats = report.stats;
+            const notPassed = [];
+            const walk = (suite) => {
+              for (const spec of suite.specs ?? []) {
+                const status = spec.tests?.[0]?.results?.[0]?.status ?? "unknown";
+                if (!spec.ok || status === "skipped") notPassed.push(`${status} - ${spec.title}`);
+              }
+              for (const child of suite.suites ?? []) walk(child);
+            };
+            for (const suite of report.suites ?? []) walk(suite);
+            console.log(`passed ${stats.expected} | skipped/blocked ${stats.skipped} | failed ${stats.unexpected} | flaky ${stats.flaky}`);
+            for (const entry of notPassed) console.log(`  not passed: ${entry}`);
+          ' "$results"
