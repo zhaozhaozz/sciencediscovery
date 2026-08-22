@@ -23,7 +23,11 @@ name: CI
 on:
   push:
     branches: [main, master]
+  # These are the activity types GitHub applies by default; naming them keeps
+  # the contract visible: every pull request is checked when it is opened,
+  # whenever new commits are pushed to it, and if it is reopened.
   pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 concurrency:
