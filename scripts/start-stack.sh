@@ -112,6 +112,26 @@ require_command() { # <command> <failure message>
   command -v "$1" >/dev/null || { echo "$2" >&2; exit 1; }
 }
 
+# The repository default moved from `data` to `.sciencediscovery-data`. Move an
+# existing default once so a checkout keeps its projects, tokens and service
+# environments, and never replace a directory that already exists.
+migrate_legacy_data_dir() { # <target-data-dir>
+  local target="$1"
+  local legacy="$repository_root/data"
+  [[ -n "${SCIENCE_DISCOVERY_DATA_DIR:-}" ]] && return 0
+  [[ -e "$legacy" ]] || return 0
+  if [[ ! -d "$legacy" ]]; then
+    echo "[compat] Skipped moving legacy data directory $legacy to $target: source is not a directory." >&2
+    return 0
+  fi
+  if [[ -e "$target" ]]; then
+    echo "[compat] Skipped moving legacy data directory $legacy to $target: target already exists." >&2
+    return 0
+  fi
+  mv "$legacy" "$target"
+  echo "[compat] Moved legacy data directory $legacy to $target." >&2
+}
+
 absolute_from_repository() { # <path>
   if [[ "$1" == /* ]]; then
     printf '%s\n' "$1"
@@ -172,7 +192,8 @@ prepare_local() {
   require_command bwrap "bubblewrap is required for isolated Python execution."
   require_command curl "curl is required for local service startup checks."
 
-  data_dir="$(absolute_from_repository "${SCIENCE_DISCOVERY_DATA_DIR:-data}")"
+  data_dir="$(absolute_from_repository "${SCIENCE_DISCOVERY_DATA_DIR:-.sciencediscovery-data}")"
+  migrate_legacy_data_dir "$data_dir"
   local envs_dir="$data_dir/envs"
 
   if [[ "$no_build" -eq 0 ]]; then

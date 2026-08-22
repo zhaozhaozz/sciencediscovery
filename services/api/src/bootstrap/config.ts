@@ -144,7 +144,7 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerCo
     "SCIENCE_AGENT_MAX_OUTPUT_BYTES",
     DEFAULT_SYSTEM_QUOTA_SETTINGS.runnerMaxOutputBytes,
   );
-  const dataDir = resolve(repositoryRoot, env.SCIENCE_AGENT_DATA_DIR?.trim() || "data");
+  const dataDir = resolve(repositoryRoot, env.SCIENCE_AGENT_DATA_DIR?.trim() || ".sciencediscovery-data");
   // No fixed default credentials: an unset variable means "use the token this
   // installation generated on its first start", never a value an attacker could
   // guess from the source tree.

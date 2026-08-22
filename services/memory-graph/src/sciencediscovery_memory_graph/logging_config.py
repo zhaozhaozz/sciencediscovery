@@ -48,7 +48,7 @@ class _RedactingFormatter(logging.Formatter):
 
 def _resolve_log_path() -> Path:
     """Resolve the category file beneath the configured runtime data root."""
-    data_dir = Path(os.environ.get("SCIENCE_AGENT_DATA_DIR") or "data")
+    data_dir = Path(os.environ.get("SCIENCE_AGENT_DATA_DIR") or ".sciencediscovery-data")
     configured_dir = os.environ.get("SCIENCE_AGENT_LOG_DIR", "").strip()
     logs_dir = Path(configured_dir) if configured_dir else data_dir / "logs"
     path = logs_dir / _DEFAULT_FILENAME
