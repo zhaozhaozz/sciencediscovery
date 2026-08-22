@@ -288,7 +288,7 @@ Three query forms:
 | `sse` | `SSEClientTransport(new URL(url), { requestInit: { headers } })` |
 | `http` / `streamable_http` | `StreamableHTTPClientTransport(...)` |
 
-**Interpreter resolution.** For stdio servers whose `command` is a bare `python` / `python3`, `resolveMcpPython()` tries `SCIENCE_AGENT_GATEWAY_PYTHON_PATH`, `$SCIENCE_AGENT_DATA_DIR/envs/gateway/bin/python`, `data/envs/gateway/bin/python`, and `services/gateway/.venv/bin/python` before falling back to `python`. **This is why the bundled biomed / UniProt MCP servers still depend on the gateway venv.**
+**Interpreter resolution.** For stdio servers whose `command` is a bare `python` / `python3`, `resolveMcpPython()` tries `SCIENCE_AGENT_GATEWAY_PYTHON_PATH`, `$SCIENCE_AGENT_DATA_DIR/envs/gateway/bin/python`, `.sciencediscovery-data/envs/gateway/bin/python`, and `services/gateway/.venv/bin/python` before falling back to `python`. **This is why the bundled biomed / UniProt MCP servers still depend on the gateway venv.**
 
 **Environment projection.** The child environment starts from `getDefaultEnvironment()`, adds the configured `env` (**proxy variables are filtered out**), then applies `proxyEnvOverlay(proxy)`: `direct` injects nothing, `environment` copies the current process's proxy variables, and `url` pins `HTTP_PROXY` and friends to that URL while preserving `NO_PROXY`.
 

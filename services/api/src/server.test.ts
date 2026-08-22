@@ -1009,7 +1009,7 @@ test("loadServerConfig uses safe local defaults", async (context) => {
 
 test("loadServerConfig defaults the data directory to the repository data dir", () => {
   const config = loadServerConfig({ ...CONFIGURED_TOKENS });
-  assert.equal(config.dataDir.endsWith("/data"), true);
+  assert.equal(config.dataDir.endsWith("/.sciencediscovery-data"), true);
 });
 
 test("loadServerConfig preserves an explicit network bind", () => {

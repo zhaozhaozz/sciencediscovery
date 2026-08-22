@@ -15,7 +15,7 @@ set -a && source .env && set +a
 | `SCIENCE_AGENT_HOST` | `127.0.0.1` | HTTP bind address; another interface requires explicit configuration |
 | `SCIENCE_AGENT_PORT` | `4310` | HTTP port |
 | `SCIENCE_AGENT_AUTH_TOKEN` | generated on first start | Browser/API bearer token; unset means the value stored in `<data-dir>/secrets/auth-token` |
-| `SCIENCE_DISCOVERY_DATA_DIR` | `data` for the repository launcher; `./science-discovery-data` for the single-file launcher | Projects, sessions, workspaces, keys, and service environments. The former `SCIENCE_AGENT_DATA_DIR` remains a logged compatibility fallback. |
+| `SCIENCE_DISCOVERY_DATA_DIR` | `.sciencediscovery-data`, resolved from the repository root or from the working directory of the single-file launcher | Projects, sessions, workspaces, keys, and service environments. The former `SCIENCE_AGENT_DATA_DIR` remains a logged compatibility fallback. |
 | `SCIENCE_AGENT_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` threshold |
 | `SCIENCE_AGENT_LOG_DIR` | `<data-dir>/logs` | Optional log directory override |
 | `SCIENCE_AGENT_LOG_MAX_BYTES` | `10485760` | Maximum bytes in one category log before rotation |
@@ -101,22 +101,22 @@ Unless overridden, persistent application data is kept in the repository:
 
 | Location | Contents |
 |---|---|
-| `data/` (`SCIENCE_DISCOVERY_DATA_DIR`) | All runtime state; back it up as a unit |
-| `data/catalog.sqlite` | Projects, sessions, settings, model configuration, permissions, and specialists; legacy `catalog.json` is imported |
-| `data/mcp-result-cache.sqlite` | MCP result cache |
-| `data/web-cache.sqlite`, `data/web-audit.sqlite` | Web cache and `WebInvocation` audit |
-| `data/model-secrets.key` | Owner-readable AES-256-GCM key for provider tokens |
-| `data/projects/<project-id>/sessions/<session-id>/workspace/` | Per-session uploaded/generated files and `papers/<paper-id>/` extraction results |
-| `data/cas/`, `execution-runs/`, `prompt-manifests/`, `reviews/`, `messages/` | Content-addressed blobs, execution records, prompt manifests, reviews, and chat |
-| `data/claims/`, `evidence-items/`, `evidence-links/`, `mcp-invocations/`, `artifact-derivations/` | Claim/evidence provenance and MCP audit |
-| `data/session-runs/`, `run-events/<session>/<run>/main.jsonl` plus tool/subagent streams, `model-usage/`, `connector-invocations/` | Run records, lossless append-only timelines, usage, and connector audit |
-| `data/artifact-plans/`, `artifact-jobs/`, `artifact-extraction-jobs/` | Download and PDF-extraction job state |
-| `data/scientific-envs/`, `runner-runtime/` | Managed environments and runner temporary state |
-| `data/skills/` | Managed skill packages and revisions |
-| `data/envs/paper/`, `data/envs/gateway/` | Rebuildable uv service environments |
-| `data/logs/{api,run,gateway,runner,memory-graph}.log` | Rotating category logs; Science Memory exists only when enabled |
+| `.sciencediscovery-data/` (`SCIENCE_DISCOVERY_DATA_DIR`) | All runtime state; back it up as a unit |
+| `.sciencediscovery-data/catalog.sqlite` | Projects, sessions, settings, model configuration, permissions, and specialists; legacy `catalog.json` is imported |
+| `.sciencediscovery-data/mcp-result-cache.sqlite` | MCP result cache |
+| `.sciencediscovery-data/web-cache.sqlite`, `.sciencediscovery-data/web-audit.sqlite` | Web cache and `WebInvocation` audit |
+| `.sciencediscovery-data/model-secrets.key` | Owner-readable AES-256-GCM key for provider tokens |
+| `.sciencediscovery-data/projects/<project-id>/sessions/<session-id>/workspace/` | Per-session uploaded/generated files and `papers/<paper-id>/` extraction results |
+| `.sciencediscovery-data/cas/`, `execution-runs/`, `prompt-manifests/`, `reviews/`, `messages/` | Content-addressed blobs, execution records, prompt manifests, reviews, and chat |
+| `.sciencediscovery-data/claims/`, `evidence-items/`, `evidence-links/`, `mcp-invocations/`, `artifact-derivations/` | Claim/evidence provenance and MCP audit |
+| `.sciencediscovery-data/session-runs/`, `run-events/<session>/<run>/main.jsonl` plus tool/subagent streams, `model-usage/`, `connector-invocations/` | Run records, lossless append-only timelines, usage, and connector audit |
+| `.sciencediscovery-data/artifact-plans/`, `artifact-jobs/`, `artifact-extraction-jobs/` | Download and PDF-extraction job state |
+| `.sciencediscovery-data/scientific-envs/`, `runner-runtime/` | Managed environments and runner temporary state |
+| `.sciencediscovery-data/skills/` | Managed skill packages and revisions |
+| `.sciencediscovery-data/envs/paper/`, `.sciencediscovery-data/envs/gateway/` | Rebuildable uv service environments |
+| `.sciencediscovery-data/logs/{api,run,gateway,runner,memory-graph}.log` | Rotating category logs; Science Memory exists only when enabled |
 | Browser local storage | API bearer token only; model credentials never leave the backend |
 
-The data directory is the only runtime root. `SCIENCE_DISCOVERY_DATA_DIR=/srv/science-discovery ./scripts/run-local.sh` moves state and service environments together. The former `SCIENCE_AGENT_DATA_DIR` is still read as a compatibility fallback and produces a log; when both are set, `SCIENCE_DISCOVERY_DATA_DIR` wins and the choice is logged. For the single-file launcher, an existing default `./science-agent-data` directory is imported once into `./science-discovery-data`; an existing target is never overwritten and the skip is logged. Deleting the active data directory removes projects, sessions, credentials, and audit records. Under [Docker deployment](../how-to/deployment.md#docker-deployment), it is the host `./data` bind mount; only service `envs/` live in the image. `services/paper/.venv` and `services/gateway/.venv` are used only by standalone development or smoke commands.
+The data directory is the only runtime root. `SCIENCE_DISCOVERY_DATA_DIR=/srv/science-discovery ./scripts/run-local.sh` moves state and service environments together. The former `SCIENCE_AGENT_DATA_DIR` is still read as a compatibility fallback and produces a log; when both are set, `SCIENCE_DISCOVERY_DATA_DIR` wins and the choice is logged. For the repository launcher, an existing default `data` directory is moved once into `.sciencediscovery-data`. For the single-file launcher, an existing default `./science-discovery-data` or the older `./science-agent-data` is imported once into `./.sciencediscovery-data`, newest first; an existing target is never overwritten and the skip is logged. Deleting the active data directory removes projects, sessions, credentials, and audit records. Under [Docker deployment](../how-to/deployment.md#docker-deployment), it is the host `./data` bind mount; only service `envs/` live in the image. `services/paper/.venv` and `services/gateway/.venv` are used only by standalone development or smoke commands.
 
 The single-file payload overrides follow the same naming and precedence rule: use `SCIENCE_DISCOVERY_PAYLOAD_CACHE_DIR` for the extraction cache or `SCIENCE_DISCOVERY_PAYLOAD_DIR` for a pre-extracted payload. The corresponding `SCIENCE_AGENT_*` names remain logged compatibility fallbacks.

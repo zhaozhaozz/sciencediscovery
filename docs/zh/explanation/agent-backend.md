@@ -291,7 +291,7 @@ streamModelTurn(endpoint, systemPrompt, history, tools, policy, signal, callback
 | `sse` | `SSEClientTransport(new URL(url), { requestInit: { headers } })` |
 | `http` / `streamable_http` | `StreamableHTTPClientTransport(...)` |
 
-**解释器解析**：stdio 且 `command` 是裸 `python` / `python3` 时，`resolveMcpPython()` 依次尝试 `SCIENCE_AGENT_GATEWAY_PYTHON_PATH`、`$SCIENCE_AGENT_DATA_DIR/envs/gateway/bin/python`、`data/envs/gateway/bin/python`、`services/gateway/.venv/bin/python`，都没有才回落到 `python`。**这是随包 biomed / UniProt MCP server 仍然依赖 gateway venv 的原因**。
+**解释器解析**：stdio 且 `command` 是裸 `python` / `python3` 时，`resolveMcpPython()` 依次尝试 `SCIENCE_AGENT_GATEWAY_PYTHON_PATH`、`$SCIENCE_AGENT_DATA_DIR/envs/gateway/bin/python`、`.sciencediscovery-data/envs/gateway/bin/python`、`services/gateway/.venv/bin/python`，都没有才回落到 `python`。**这是随包 biomed / UniProt MCP server 仍然依赖 gateway venv 的原因**。
 
 **环境投影**：子进程环境从 `getDefaultEnvironment()` 起步，叠加配置里的 `env`（但**代理类变量被剔除**），最后叠加 `proxyEnvOverlay(proxy)` 决定的代理变量——`direct` 不注入任何代理变量，`environment` 复制当前进程的代理变量，`url` 把 `HTTP_PROXY` 等一组固定成该 URL 并保留 `NO_PROXY`。
 

@@ -9,7 +9,7 @@ Everything listed under [README → Quick start → Requirements](README.md#requ
 Run the stack once before running the full check suite — the API agent-path tests spawn the gateway and need its Python environment:
 
 ```bash
-./scripts/start-stack.sh --mode local   # provisions data/envs/gateway and data/envs/paper
+./scripts/start-stack.sh --mode local   # provisions .sciencediscovery-data/envs/{gateway,paper}
 ```
 
 Alternatively, provide a standalone `services/gateway/.venv`.
@@ -20,7 +20,7 @@ Alternatively, provide a standalone `services/gateway/.venv`.
 pnpm check        # typecheck, paper tests, build, and package unit tests
 pnpm test         # build + recursive package unit tests
 pnpm smoke        # build + @sciencediscovery/api unit tests only
-pnpm paper:setup  # locked PDF parser venv (project-local; app runtime uses data/envs/paper)
+pnpm paper:setup  # locked PDF parser venv (project-local; app runtime uses .sciencediscovery-data/envs/paper)
 pnpm paper:test   # PDF extraction tests
 pnpm dev          # API watch (after build; does not start runner/gateway by itself)
 pnpm --filter @sciencediscovery/web dev   # UI hot reload on :5173 (proxies API :4310)
@@ -99,6 +99,32 @@ HTTP/WebSocket guard, isolation, failure attribution, and
 discovered/executed/skipped reporting.
 
 Integration/e2e tests under `test/` are **not** part of `pnpm check`.
+
+## CI layers
+
+CI groups the commands above into three layer entry points. Reproducing a
+pipeline failure locally means running the same one:
+
+```bash
+pnpm ci:ut    # pnpm check, then the memory-graph pytest suite
+pnpm ci:st    # build, then the hermetic agent-loop smoke
+pnpm ci:e2e   # starts its own isolated stack and runs the @mocked journeys
+```
+
+Each writes `run.log` and a machine-readable summary below `CI_RESULTS_DIR`,
+and gives the run a scratch data directory below `CI_RUNTIME_DIR`. Both default
+to paths that exist only inside the `.ci` toolchain image, so outside that image
+point them somewhere writable:
+
+```bash
+CI_RESULTS_DIR=.tmp/ci-results CI_RUNTIME_DIR=.tmp/ci-runtime pnpm ci:st
+```
+
+Live and hardware layers (`ci:st:real`, `ci:e2e:real`, `ci:st:npu`,
+`ci:e2e:legacy`) fail closed behind their `CI_ALLOW_*` variables and are never
+part of a default command. See [.ci/README.md](.ci/README.md) for the toolchain
+image, the per-layer Docker commands, and the tag catalog used to select cases
+(`pnpm ci:tags`, `pnpm ci:list`, `pnpm ci:run`).
 
 ## Architecture and docs
 
