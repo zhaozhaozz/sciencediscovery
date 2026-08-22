@@ -100,6 +100,32 @@ discovered/executed/skipped reporting.
 
 Integration/e2e tests under `test/` are **not** part of `pnpm check`.
 
+## CI layers
+
+CI groups the commands above into three layer entry points. Reproducing a
+pipeline failure locally means running the same one:
+
+```bash
+pnpm ci:ut    # pnpm check, then the memory-graph pytest suite
+pnpm ci:st    # build, then the hermetic agent-loop smoke
+pnpm ci:e2e   # starts its own isolated stack and runs the @mocked journeys
+```
+
+Each writes `run.log` and a machine-readable summary below `CI_RESULTS_DIR`,
+and gives the run a scratch data directory below `CI_RUNTIME_DIR`. Both default
+to paths that exist only inside the `.ci` toolchain image, so outside that image
+point them somewhere writable:
+
+```bash
+CI_RESULTS_DIR=.tmp/ci-results CI_RUNTIME_DIR=.tmp/ci-runtime pnpm ci:st
+```
+
+Live and hardware layers (`ci:st:real`, `ci:e2e:real`, `ci:st:npu`,
+`ci:e2e:legacy`) fail closed behind their `CI_ALLOW_*` variables and are never
+part of a default command. See [.ci/README.md](.ci/README.md) for the toolchain
+image, the per-layer Docker commands, and the tag catalog used to select cases
+(`pnpm ci:tags`, `pnpm ci:list`, `pnpm ci:run`).
+
 ## Architecture and docs
 
 Module boundaries, the agent backend, and connector internals are documented under [docs/](docs/) (Chinese). Start with [docs/README.md](docs/README.md).

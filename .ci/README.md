@@ -119,6 +119,13 @@ doubled paths.
 -v <host-results>:/ci-results
 ```
 
+The container installs into the mounted checkout, so `node_modules` ends up
+bound to the container's pnpm store. The next host command then aborts with
+`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`, because pnpm wants to purge the
+modules directory and refuses to do so without a TTY. Rebind it with
+`CI=1 pnpm install --frozen-lockfile` before working on the host again, or give
+the container a checkout of its own.
+
 Run with the checkout owner's numeric identity so generated dependencies,
 build output, and reports remain writable on the host and permission-sensitive
 tests do not acquire root's bypass privileges:

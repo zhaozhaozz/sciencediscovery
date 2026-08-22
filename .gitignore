@@ -33,6 +33,13 @@ coverage/
 .tmp/
 .local/
 *.log
+# packages/provenance falls back to <cwd>/logs when no data directory is
+# configured, so the reviewer NDJSON can land next to whichever service ran.
+logs/
+
+# Local stack runtime: scripts/start-stack.sh --mode local defaults its data
+# directory here, holding service venvs, session data and bootstrap tokens.
+/data/
 
 # Local Playwright environment and reports
 .e2e/
