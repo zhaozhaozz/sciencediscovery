@@ -4,7 +4,7 @@ This directory defines a source-free CI toolchain image and the repository
 entry points for unit tests (UT), hermetic system tests (ST), and browser E2E.
 The image contains Node.js 22.19, pnpm 11.1.2, Python 3.12, uv, bubblewrap,
 build tools, and Playwright's Chromium system libraries. Product source and
-test dependencies are supplied only by the checkout mounted at `/workspace`.
+test dependencies are supplied only by the checkout mounted at `/src`.
 
 ## Existing tests and CI mapping
 
@@ -102,10 +102,20 @@ checkout rather than a linked Git worktree: a worktree's `.git` file points at
 the main repository and is not portable into the container.
 
 All commands use the same mounts. `<host-results>` should be a new or empty
-directory for the run.
+directory for the run, and it must already exist and be owned by the invoking
+identity: Docker creates a missing bind-mount source as root, and the container
+then cannot write its reports.
+
+Mount the checkout at `/src`, which is also the image's `WORKDIR`. Do not mount
+it at `/workspace`: the Runner's bubblewrap sandbox mounts the Session
+workspace over that exact path, so a checkout there is shadowed inside the
+sandbox. Five Runner tests fail that way — the two `scientific-execution`
+subcases lose their fake managed interpreter and exit 127, and the three NPU
+Broker cases see their `/workspace`-prefixed arguments re-anchored into
+doubled paths.
 
 ```text
--v <repo>:/workspace
+-v <repo>:/src
 -v <host-results>:/ci-results
 ```
 
@@ -140,6 +150,15 @@ Optional cache volumes speed up repeated dependency and browser installs:
 --mount type=volume,source=sciencediscovery-ci-cache,target=/ci-cache
 ```
 
+That volume is not only a cache: `CI_RUNTIME_DIR` defaults below it, so it also
+holds the E2E stack's `data/envs`. Those service environments are *editable*
+installs whose `.pth` files record the absolute source path, so a volume
+populated from one checkout location is unusable from another. After changing
+the mount path, drop `/ci-cache/sciencediscovery-e2e` and
+`/ci-cache/sciencediscovery-tests` (or the whole volume); otherwise the stack
+starts and the service dies with `ModuleNotFoundError`, and the E2E layer
+reports BLOCKED because it never became healthy.
+
 ## One command per layer
 
 From the repository root, substitute absolute host paths for `<repo>` and
@@ -153,7 +172,7 @@ docker run --rm \
   --security-opt seccomp=unconfined \
   --security-opt apparmor=unconfined \
   --security-opt systempaths=unconfined \
-  -v <repo>:/workspace \
+  -v <repo>:/src \
   -v <host-results>:/ci-results \
   sciencediscovery-ci:test pnpm ci:ut
 ```
@@ -166,7 +185,7 @@ docker run --rm \
   --security-opt seccomp=unconfined \
   --security-opt apparmor=unconfined \
   --security-opt systempaths=unconfined \
-  -v <repo>:/workspace \
+  -v <repo>:/src \
   -v <host-results>:/ci-results \
   sciencediscovery-ci:test pnpm ci:st
 ```
@@ -180,7 +199,7 @@ docker run --rm \
   --security-opt seccomp=unconfined \
   --security-opt apparmor=unconfined \
   --security-opt systempaths=unconfined \
-  -v <repo>:/workspace \
+  -v <repo>:/src \
   -v <host-results>:/ci-results \
   sciencediscovery-ci:test pnpm ci:e2e
 ```
@@ -191,7 +210,7 @@ example, this runs only hermetic ST cases compatible with amd64 and no NPU:
 ```bash
 docker run --rm \
   --user "$(id -u):$(id -g)" \
-  -v <repo>:/workspace \
+  -v <repo>:/src \
   -v <host-results>:/ci-results \
   sciencediscovery-ci:test \
   pnpm ci:run -- --tag layer:st --tag llm:stub --tag arch:amd64 --exclude npu:required
@@ -264,7 +283,6 @@ container cannot safely or reliably provide.
 | Real NPU workloads such as `services/runner/workloads/npu-smoke-test.py` | Vendor device nodes, drivers, runtime libraries, model/data assets, and usually a native aarch64/NPU host | Hardware-specific runner with explicit device mounts and its own acceptance record |
 | Full bubblewrap execution when the host denies unprivileged user namespaces | Docker flags cannot override a host kernel/AppArmor policy that rejects user namespace creation | Run on a Linux worker with user namespaces enabled; record UT/E2E as BLOCKED if the bwrap preflight fails |
 | Host-only sandbox fallback/full-profile validation | A container cannot reproduce every host `/proc/sys`, AppArmor, LXC, and distribution-specific bwrap combination | Keep the existing stubbed capability/unit tests in UT; run real preflight/fallback checks on representative native hosts |
-| `services/runner/src/scientific-execution.test.ts` managed R subcase when the checkout is mounted at `/workspace` | The fixture creates its fake managed prefix below `process.cwd()`, while the nested runner sandbox mounts the Session workspace over `/workspace`; that hides the fake R script's absolute interpreter path and it exits 127 | Keep the failure visible in the UT log and run this host-path-sensitive subcase on a native checkout until the fixture places its managed prefix outside the sandbox mount target |
 | Playwright or sandbox runs for the other CPU architecture under QEMU | Browser sandboxing and timing under emulation are not representative and may not be supported by the downloaded browser | Build the two-platform manifest with buildx, but execute amd64 and arm64 jobs on native workers |
 | Docker Desktop on macOS/Windows | The product runner requires Linux user/mount namespaces and bubblewrap | Use a native Linux CI worker or VM |
 | J3 in the default mocked job | J3 intentionally does not install the base or access conda channels; the generic E2E command sets `SCIENTIFIC_ENVS=0` so startup cannot turn a user journey into environment provisioning | In a separate, explicitly network-enabled job, set `E2E_SCIENTIFIC_ENVS=1` and reuse a pre-seeded `CI_RUNTIME_DIR`; keep that opt-in out of the default command |
