@@ -100,6 +100,57 @@ discovered/executed/skipped reporting.
 
 Integration/e2e tests under `test/` are **not** part of `pnpm check`.
 
+## License headers
+
+Every source file starts with the Apache-2.0 header below, written in that
+file's comment syntax:
+
+```text
+Copyright (C) 2026-2026 Huawei Technologies Co., Ltd
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+Comment markers, matching what is already in the tree:
+
+| Files | Marker | Reference |
+| --- | --- | --- |
+| `.ts`, `.tsx`, `.js`, `.mjs` | `//` on every line | [apps/web/src/session-activity.ts](apps/web/src/session-activity.ts) |
+| `.py`, `.sh`, `.yml`, `.toml`, `Dockerfile` | `#` on every line | [.ci/run-e2e.sh](.ci/run-e2e.sh) |
+| `.css` | `/*` block with ` * ` continuation lines | [apps/web/src/styles/conversation.css](apps/web/src/styles/conversation.css) |
+| `.html` | one `<!-- -->` block | [apps/web/index.html](apps/web/index.html) |
+
+The header is the first thing in the file, except where the format demands
+something earlier — a shebang (`#!/usr/bin/env bash`) or a doctype
+(`<!doctype html>`) — in which case it follows on the next line. Blank lines
+inside the header stay commented (`//` or `#` with nothing after it), and one
+uncommented blank line separates the header from the code.
+
+### Exceptions
+
+These do not carry a header:
+
+- **Documentation and plain text** — `.md`, `.txt`, `LICENSE`, `CODEOWNERS`.
+- **Formats with no comment syntax** — `.json` (including `package.json` and
+  `tsconfig*.json`), `.python-version`, and similar. Do not invent a `//`
+  comment to work around strict JSON.
+- **Files generated in full by a script** — lockfiles such as `pnpm-lock.yaml`,
+  and any artifact a generator writes end to end. Put the header in the
+  generator instead, and have it emit one only when the output format supports
+  comments. A file that is merely scaffolded and then edited by hand is not
+  generated: it needs the header.
+- **Binary assets** — images, fonts, PDFs.
+
 ## Architecture and docs
 
 Module boundaries, the agent backend, and connector internals are documented under [docs/](docs/) (Chinese). Start with [docs/README.md](docs/README.md).
