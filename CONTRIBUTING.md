@@ -9,7 +9,7 @@ Everything listed under [README → Quick start → Requirements](README.md#requ
 Run the stack once before running the full check suite — the API agent-path tests spawn the gateway and need its Python environment:
 
 ```bash
-./scripts/start-stack.sh --mode local   # provisions data/envs/gateway and data/envs/paper
+./scripts/start-stack.sh --mode local   # provisions .sciencediscovery-data/envs/{gateway,paper}
 ```
 
 Alternatively, provide a standalone `services/gateway/.venv`.
@@ -20,7 +20,7 @@ Alternatively, provide a standalone `services/gateway/.venv`.
 pnpm check        # typecheck, paper tests, build, and package unit tests
 pnpm test         # build + recursive package unit tests
 pnpm smoke        # build + @sciencediscovery/api unit tests only
-pnpm paper:setup  # locked PDF parser venv (project-local; app runtime uses data/envs/paper)
+pnpm paper:setup  # locked PDF parser venv (project-local; app runtime uses .sciencediscovery-data/envs/paper)
 pnpm paper:test   # PDF extraction tests
 pnpm dev          # API watch (after build; does not start runner/gateway by itself)
 pnpm --filter @sciencediscovery/web dev   # UI hot reload on :5173 (proxies API :4310)

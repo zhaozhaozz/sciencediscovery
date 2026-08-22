@@ -142,7 +142,7 @@ test("loadRunnerConfig resolves runtime data from the repository root", () => {
   const repositoryRoot = resolve(process.cwd(), ".tmp", "relocated-ScienceDiscovery");
   const loaded = loadRunnerConfig({}, repositoryRoot);
   assert.equal(loaded.bwrapPath, "bwrap");
-  assert.equal(loaded.dataDir, resolve(repositoryRoot, "data"));
+  assert.equal(loaded.dataDir, resolve(repositoryRoot, ".sciencediscovery-data"));
   assert.equal(loaded.host, "127.0.0.1");
   assert.equal(loaded.port, 4311);
   assert.equal(loaded.execTimeoutMs, 0);

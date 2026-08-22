@@ -29,7 +29,7 @@ describe("launcher option parsing", () => {
     assert.equal(settings.host, "127.0.0.1");
     assert.equal(settings.port, 4310);
     assert.equal(settings.runnerPort, 4311);
-    assert.equal(settings.dataDir, "/opt/sciencediscovery/science-discovery-data");
+    assert.equal(settings.dataDir, "/opt/sciencediscovery/.sciencediscovery-data");
     assert.equal(settings.bwrapPath, "bwrap");
     assert.equal(settings.scientificEnvironments, true);
     assert.equal(settings.skipSandboxCheck, false);

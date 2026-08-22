@@ -47,7 +47,7 @@ sciencediscovery/
 | `services/runner` | `127.0.0.1:4311` | 沙箱执行；仅回环 |
 | `services/api` | `127.0.0.1:4310` | 控制 API + 静态 UI；默认仅本机 |
 
-首次启动会在 `data/envs/gateway`、`data/envs/paper` 下用 uv 准备 Python 环境。本仓已无 submodule。
+首次启动会在 `.sciencediscovery-data/envs/gateway`、`.sciencediscovery-data/envs/paper` 下用 uv 准备 Python 环境。本仓已无 submodule。
 
 ## 2. 模块划分与主要功能
 
@@ -125,14 +125,14 @@ sciencediscovery/
 
 | 位置 | 内容 |
 |------|------|
-| `data/catalog.sqlite` | 项目、会话、设置、模型元数据、权限、specialists |
-| `data/model-secrets.key` | 提供方 token 加密密钥（AES-256-GCM） |
-| `data/projects/.../workspace/` | 每会话工作区与 `papers/` 抽取结果 |
-| `data/cas/` 等 | 内容寻址 blob、执行记录、评审、消息 |
-| `data/claims/`、`evidence-links/`、`mcp-invocations/` | 证据与 MCP 审计 |
-| `data/artifact-jobs/`、`artifact-extraction-jobs/` | 文件下载与 PDF 抽取任务 |
-| `data/scientific-envs/` | 托管 Python/R 前缀 |
-| `data/envs/gateway`、`paper` | 服务用 Python 环境（可重建） |
+| `.sciencediscovery-data/catalog.sqlite` | 项目、会话、设置、模型元数据、权限、specialists |
+| `.sciencediscovery-data/model-secrets.key` | 提供方 token 加密密钥（AES-256-GCM） |
+| `.sciencediscovery-data/projects/.../workspace/` | 每会话工作区与 `papers/` 抽取结果 |
+| `.sciencediscovery-data/cas/` 等 | 内容寻址 blob、执行记录、评审、消息 |
+| `.sciencediscovery-data/claims/`、`evidence-links/`、`mcp-invocations/` | 证据与 MCP 审计 |
+| `.sciencediscovery-data/artifact-jobs/`、`artifact-extraction-jobs/` | 文件下载与 PDF 抽取任务 |
+| `.sciencediscovery-data/scientific-envs/` | 托管 Python/R 前缀 |
+| `.sciencediscovery-data/envs/gateway`、`paper` | 服务用 Python 环境（可重建） |
 
 环境变量与完整存储布局见[配置参考](configuration.md)。
 
