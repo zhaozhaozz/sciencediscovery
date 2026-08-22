@@ -19,14 +19,17 @@
 # ci:st:npu and ci:e2e:legacy need credentials or hardware and stay behind
 # their CI_ALLOW_* gates.
 #
-# Three runner differences shape every job below:
-#   - checkout-action places the source in ./repo_workspace on the documented
-#     sample runner. Each command enters it when it exists and otherwise stays
-#     put, so the jobs work under either layout.
-#   - Only the toolchain that setup-node provides is assumed present. pnpm, uv
-#     and bubblewrap are installed per job, and PATH additions are re-exported
-#     in each step because they do not survive the step boundary.
-#   - There is no artifact upload action, so each job prints its own evidence.
+# checkout-action is the only platform action used. Node, pnpm, uv and
+# bubblewrap all come from .ci/provision-runner.sh, which prints what the
+# runner already had before it installs anything. Depending on one action
+# instead of several keeps the failure surface small on a platform whose
+# action catalogue is not documented, and the script's diagnostics are what
+# make a failed run readable when the runs API cannot be queried.
+#
+# checkout-action places the source in ./repo_workspace on the documented
+# sample runner. Each step enters that directory when it exists and stays put
+# otherwise, so the jobs work under either layout. PATH additions are
+# re-exported per step because they do not survive the step boundary.
 
 name: CI
 
@@ -35,6 +38,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Lets a run be retried from the UI without pushing a commit.
+  workflow_dispatch:
 
 jobs:
   ut:
@@ -42,47 +47,16 @@ jobs:
     steps:
       - uses: checkout-action@0.0.1
 
-      - name: Use Node.js
-        uses: setup-node@0.0.1
-        with:
-          node-version: '22.19.0'
-
-      - name: Provision the toolchain
+      - name: Provision the runner
         run: |
           set -eu
-          # The hosted image may or may not run the job as root.
-          as_root() {
-            if [ "$(id -u)" -eq 0 ]; then "$@"
-            elif command -v sudo >/dev/null 2>&1; then sudo "$@"
-            else echo "no route to root for: $*" >&2; return 1
-            fi
-          }
           if [ -d repo_workspace ]; then cd repo_workspace; fi
-          # packageManager in package.json pins the version; corepack honours it.
-          export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-          corepack enable
-          corepack prepare --activate
-          pnpm --version
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          export PATH="$HOME/.local/bin:$PATH"
-          uv --version
-          # ut-runner executes real bubblewrap, which needs unprivileged user
-          # namespaces. Ubuntu 24.04 denies those by AppArmor policy; clearing
-          # it is a no-op on 22.04. Fail here with a clear message rather than
-          # letting the Runner suite report a host limitation as a product
-          # failure.
-          if ! command -v bwrap >/dev/null 2>&1; then
-            as_root apt-get update
-            as_root apt-get install --yes --no-install-recommends bubblewrap
-          fi
-          as_root sysctl --write kernel.apparmor_restrict_unprivileged_userns=0 || true
-          bwrap --ro-bind / / --dev /dev true
-          bwrap --version
+          bash .ci/provision-runner.sh --sandbox
 
       - name: Run UT
         run: |
           set -eu
-          export PATH="$HOME/.local/bin:$PATH"
+          export PATH="$HOME/.local/node/bin:$HOME/.local/share/pnpm:$HOME/.local/bin:$PATH"
           if [ -d repo_workspace ]; then cd repo_workspace; fi
           # Both defaults live inside the .ci image only. The runtime directory
           # stays outside the checkout so the Runner sandbox never mounts over
@@ -93,6 +67,7 @@ jobs:
 
       - name: Report UT results
         run: |
+          # No artifact upload action exists here, so the log is the record.
           if [ -d repo_workspace ]; then cd repo_workspace; fi
           tail -n 40 .ci-results/ut/run.log 2>/dev/null || echo "no run.log produced"
 
@@ -101,29 +76,18 @@ jobs:
     steps:
       - uses: checkout-action@0.0.1
 
-      - name: Use Node.js
-        uses: setup-node@0.0.1
-        with:
-          node-version: '22.19.0'
-
-      - name: Provision the toolchain
+      - name: Provision the runner
         run: |
           set -eu
           if [ -d repo_workspace ]; then cd repo_workspace; fi
-          export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-          corepack enable
-          corepack prepare --activate
-          pnpm --version
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          export PATH="$HOME/.local/bin:$PATH"
-          uv --version
+          bash .ci/provision-runner.sh
 
       # The hermetic agent loop drives a scripted local endpoint and performs a
       # real workspace tool round trip; no sandbox and no model credential.
       - name: Run ST
         run: |
           set -eu
-          export PATH="$HOME/.local/bin:$PATH"
+          export PATH="$HOME/.local/node/bin:$HOME/.local/share/pnpm:$HOME/.local/bin:$PATH"
           if [ -d repo_workspace ]; then cd repo_workspace; fi
           export CI_RESULTS_DIR="$PWD/.ci-results"
           export CI_RUNTIME_DIR="$HOME/ci-runtime-st"
@@ -139,40 +103,16 @@ jobs:
     steps:
       - uses: checkout-action@0.0.1
 
-      - name: Use Node.js
-        uses: setup-node@0.0.1
-        with:
-          node-version: '22.19.0'
-
-      - name: Provision the toolchain
+      - name: Provision the runner
         run: |
           set -eu
-          as_root() {
-            if [ "$(id -u)" -eq 0 ]; then "$@"
-            elif command -v sudo >/dev/null 2>&1; then sudo "$@"
-            else echo "no route to root for: $*" >&2; return 1
-            fi
-          }
           if [ -d repo_workspace ]; then cd repo_workspace; fi
-          export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-          corepack enable
-          corepack prepare --activate
-          pnpm --version
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          export PATH="$HOME/.local/bin:$PATH"
-          uv --version
-          # Chromium needs the same unprivileged user namespaces as the sandbox.
-          if ! command -v bwrap >/dev/null 2>&1; then
-            as_root apt-get update
-            as_root apt-get install --yes --no-install-recommends bubblewrap
-          fi
-          as_root sysctl --write kernel.apparmor_restrict_unprivileged_userns=0 || true
-          bwrap --version
+          bash .ci/provision-runner.sh --sandbox
 
       - name: Run mocked E2E
         run: |
           set -eu
-          export PATH="$HOME/.local/bin:$PATH"
+          export PATH="$HOME/.local/node/bin:$HOME/.local/share/pnpm:$HOME/.local/bin:$PATH"
           if [ -d repo_workspace ]; then cd repo_workspace; fi
           export CI_RESULTS_DIR="$PWD/.ci-results"
           export CI_RUNTIME_DIR="$HOME/ci-runtime-e2e"
