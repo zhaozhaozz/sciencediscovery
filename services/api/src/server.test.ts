@@ -15,7 +15,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
-import { access, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
@@ -161,6 +161,91 @@ function testConfig(dataDir: string, runnerUrl = "http://127.0.0.1:1"): ServerCo
   };
 }
 
+/**
+ * bubblewrap option arities, so the stand-in can find where the sandbox
+ * arguments end and the command begins. An unknown option aborts rather than
+ * guessing: a silently misparsed launch would run the wrong argv.
+ */
+const BWRAP_ARITY: Record<string, number> = {
+  "--args": 1, "--argv0": 1, "--as-pid-1": 0, "--bind": 2, "--bind-data": 2,
+  "--bind-try": 2, "--block-fd": 1, "--cap-add": 1, "--cap-drop": 1, "--chdir": 1,
+  "--chmod": 2, "--clearenv": 0, "--dev": 1, "--dev-bind": 2, "--dev-bind-try": 2,
+  "--die-with-parent": 0, "--dir": 1, "--disable-userns": 0, "--file": 2,
+  "--gid": 1, "--hostname": 1, "--info-fd": 1, "--json-status-fd": 1,
+  "--lock-file": 1, "--mqueue": 1, "--new-session": 0, "--perms": 1, "--pidns": 1,
+  "--proc": 1, "--remount-ro": 1, "--ro-bind": 2, "--ro-bind-data": 2,
+  "--ro-bind-try": 2, "--seccomp": 1, "--setenv": 2, "--share-net": 0, "--size": 1,
+  "--symlink": 2, "--sync-fd": 1, "--tmpfs": 1, "--uid": 1, "--unsetenv": 1,
+  "--unshare-all": 0, "--unshare-cgroup": 0, "--unshare-cgroup-try": 0,
+  "--unshare-ipc": 0, "--unshare-net": 0, "--unshare-pid": 0, "--unshare-user": 0,
+  "--unshare-user-try": 0, "--unshare-uts": 0, "--userns": 1, "--userns2": 1,
+};
+
+/**
+ * A bubblewrap stand-in that runs the command for real but without namespaces.
+ *
+ * These tests assert on what an execution produces — stdout, exit codes,
+ * timeout notices, subagent step contents — not on whether it was isolated.
+ * Isolation is covered by services/runner's own suite and by the mocked E2E
+ * journeys, both of which need a working sandbox. Using this stand-in here
+ * makes the API suite deterministic on any host, including CI runners whose
+ * container drops CAP_SYS_ADMIN and so cannot create a namespace at all.
+ *
+ * It translates the sandbox's view back to the host: bind destinations map to
+ * their sources, so `--chdir /workspace` lands in the real workspace directory
+ * and arguments naming sandbox paths resolve to the files they were bound from.
+ */
+async function writePassthroughBwrap(root: string): Promise<string> {
+  await mkdir(root, { recursive: true });
+  const implementation = resolve(root, "bwrap-passthrough.mjs");
+  await writeFile(implementation, `${[
+    'import { spawn } from "node:child_process";',
+    `const ARITY = ${JSON.stringify(BWRAP_ARITY)};`,
+    'const argv = process.argv.slice(2);',
+    'if (argv[0] === "--help") { console.log("usage: bwrap --cap-drop --die-with-parent --new-session --seccomp --unshare-all --unshare-user --disable-userns"); process.exit(0); }',
+    'if (argv[0] === "--version") { console.log("bubblewrap 0.9.0"); process.exit(0); }',
+    'const binds = []; const env = { ...process.env }; let cleared = false; let chdir; let index = 0;',
+    'for (; index < argv.length; index += 1) {',
+    '  const option = argv[index];',
+    '  if (!option.startsWith("--")) break;',
+    '  const arity = ARITY[option];',
+    '  if (arity === undefined) { console.error(`bwrap-passthrough: unknown option ${option}`); process.exit(2); }',
+    '  const values = argv.slice(index + 1, index + 1 + arity);',
+    '  if (option === "--bind" || option === "--ro-bind" || option === "--dev-bind"',
+    '   || option === "--bind-try" || option === "--ro-bind-try" || option === "--dev-bind-try") binds.push([values[1], values[0]]);',
+    '  else if (option === "--chdir") chdir = values[0];',
+    '  else if (option === "--clearenv") cleared = true;',
+    '  else if (option === "--setenv") env[values[0]] = values[1];',
+    '  else if (option === "--unsetenv") delete env[values[0]];',
+    '  index += arity;',
+    '}',
+    '// Longest destination first so /workspace/sub wins over /workspace.',
+    'binds.sort((a, b) => b[0].length - a[0].length);',
+    'const toHost = (value) => {',
+    '  for (const [destination, source] of binds) {',
+    '    if (value === destination) return source;',
+    '    if (value.startsWith(`${destination}/`)) return source + value.slice(destination.length);',
+    '  }',
+    '  return value;',
+    '};',
+    'const command = argv.slice(index).map(toHost);',
+    'if (command.length === 0) { console.error("bwrap-passthrough: no command"); process.exit(2); }',
+    '// --clearenv wipes PATH too; without it the shim could not resolve an',
+    '// interpreter that the real sandbox reaches through its own /usr mount.',
+    'const childEnv = cleared ? { ...Object.fromEntries(Object.entries(env).filter(([key]) => key === "PATH")), ...env } : env;',
+    'if (!childEnv.PATH) childEnv.PATH = process.env.PATH ?? "/usr/bin:/bin";',
+    'const child = spawn(command[0], command.slice(1), {',
+    '  cwd: chdir ? toHost(chdir) : undefined, env: childEnv, stdio: "inherit",',
+    '});',
+    'child.on("error", (error) => { console.error(`bwrap-passthrough: ${error.message}`); process.exit(127); });',
+    'child.on("exit", (code, signal) => { if (signal) process.kill(process.pid, signal); else process.exit(code ?? 0); });',
+  ].join("\n")}\n`);
+  const launcher = resolve(root, "bwrap");
+  await writeFile(launcher, `#!/bin/sh\nexec node ${JSON.stringify(implementation)} "$@"\n`);
+  await chmod(launcher, 0o755);
+  return launcher;
+}
+
 async function startTestApi(
   context: TestContext,
   dataDir: string,
@@ -168,7 +253,7 @@ async function startTestApi(
 ): Promise<{ origin: string }> {
   const runnerConfig: RunnerConfig = {
     authToken: "runner-test-token",
-    bwrapPath: process.env.SCIENCE_AGENT_BWRAP_PATH?.trim() || "bwrap",
+    bwrapPath: await writePassthroughBwrap(resolve(dataDir, "sandbox-stub")),
     dataDir,
     execTimeoutMs: 60_000,
     host: "127.0.0.1",
@@ -1637,7 +1722,7 @@ test("timeout settings drive live runs, runtime status, and persistent explainab
 
   const runner = createRunnerServer({
     authToken: "runner-test-token",
-    bwrapPath: "/usr/bin/bwrap",
+    bwrapPath: await writePassthroughBwrap(resolve(tempRoot, "sandbox-stub")),
     dataDir: tempRoot,
     execTimeoutMs: 0,
     host: "127.0.0.1",
