@@ -216,3 +216,65 @@ jobs:
           path: .ci-results/e2e
           if-no-files-found: warn
           retention-days: 14
+
+  # The single-file release binaries. scripts/package-binary-release.sh cross
+  # builds: an x86_64 host produces both artifacts, because the Node and CPython
+  # runtimes come from pinned manifests and the gateway's Python dependencies
+  # resolve as target-platform wheels. No arm64 runner is needed.
+  #
+  # The four-entry smoke gate boots the packaged app, which spawns the
+  # bubblewrap runner, so it only applies to the artifact this host can execute.
+  # The script gates the native x86_64 build and reports that the aarch64 one
+  # was not run — cross-architecture verification would need a native worker.
+  binary:
+    name: Binary release (x86_64 + aarch64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # zstd compresses the payload; the script checks for it before starting.
+      # bubblewrap is what the smoke gate needs, on the same AppArmor terms as
+      # the UT job.
+      - name: Provision the packaging tools and the sandbox
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd bubblewrap
+          sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0 || true
+          bwrap --ro-bind / / --dev /dev true
+          zstd --version
+
+      - name: Build both architectures
+        run: bash scripts/package-binary-release.sh --arch all --output dist/binary-release
+
+      - name: Report the artifacts
+        if: always()
+        run: |
+          ls -lh dist/binary-release 2>/dev/null || { echo "no artifacts produced"; exit 0; }
+          {
+            echo "### Binary release"
+            echo
+            echo '```'
+            ls -lh dist/binary-release
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the release binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-release
+          path: dist/binary-release
+          if-no-files-found: warn
+          retention-days: 7

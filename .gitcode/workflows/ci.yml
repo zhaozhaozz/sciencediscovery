@@ -110,3 +110,46 @@ jobs:
       - name: Report ST results
         run: |
           tail -n 40 .ci-results/st/run.log 2>/dev/null || echo "no run.log produced"
+
+  # The single-file release binaries. The script cross builds, so this x64
+  # runner produces both artifacts: the Node and CPython runtimes come from
+  # pinned manifests and the gateway's Python dependencies resolve as
+  # target-platform wheels.
+  #
+  # --skip-smoke because the four-entry gate boots the packaged app, which
+  # spawns the bubblewrap runner, and no sandbox can be built here. The
+  # artifacts are therefore unverified: this job proves the packaging pipeline
+  # still assembles, not that the binary runs. .github/workflows/ci.yml runs
+  # the same script with the gate active on its native artifact.
+  binary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: checkout
+
+      - name: Provision the runner
+        run: |
+          set -eu
+          bash .ci/provision-runner.sh
+
+      # zstd compresses the payload; the script checks for it before starting.
+      - name: Install the packaging tools
+        run: |
+          set -eu
+          if ! command -v zstd >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then apt-get update && apt-get install --yes --no-install-recommends zstd
+            else sudo -n apt-get update && sudo -n apt-get install --yes --no-install-recommends zstd
+            fi
+          fi
+          zstd --version
+
+      - name: Build both architectures
+        run: |
+          set -eu
+          export PATH="$HOME/.local/node/bin:$HOME/.local/share/pnpm:$HOME/.local/bin:$PATH"
+          bash scripts/package-binary-release.sh --arch all --skip-smoke --output dist/binary-release
+
+      - name: Report the artifacts
+        run: |
+          # No artifact upload action exists here, so the sizes are the record.
+          ls -lh dist/binary-release 2>/dev/null || echo "no artifacts produced"
