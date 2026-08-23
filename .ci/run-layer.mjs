@@ -39,9 +39,13 @@ const layers = {
     ["pnpm", ["check"]],
     ["pnpm", ["memory-graph:test"]],
   ],
+  // `ut` minus the sandbox: everything `pnpm check` runs, except the
+  // @sciencediscovery/runner package, whose tests assert isolation and the
+  // sandbox's path remapping and so need a real bubblewrap.
   "ut-core": [
     ["pnpm", ["install", "--frozen-lockfile"]],
     ["uv", ["sync", "--project", "services/gateway"]],
+    ["pnpm", ["architecture:check"]],
     ["pnpm", ["typecheck"]],
     ["pnpm", ["paper:test"]],
     ["pnpm", ["gateway:test"]],
