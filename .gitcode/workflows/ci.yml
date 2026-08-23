@@ -19,17 +19,34 @@
 # ci:st:npu and ci:e2e:legacy need credentials or hardware and stay behind
 # their CI_ALLOW_* gates.
 #
-# checkout-action is the only platform action used. Node, pnpm, uv and
-# bubblewrap all come from .ci/provision-runner.sh, which prints what the
-# runner already had before it installs anything. Depending on one action
-# instead of several keeps the failure surface small on a platform whose
-# action catalogue is not documented, and the script's diagnostics are what
-# make a failed run readable when the runs API cannot be queried.
+# `checkout` is the only platform action used. The hosted runner provides
+# git, curl, wget, sudo, apt-get, python3, tar and xz on Ubuntu 24.04, running
+# as an unprivileged user; it has no node, npm, corepack or bubblewrap. Those
+# come from .ci/provision-runner.sh, which prints what it found before it
+# installs anything.
 #
-# checkout-action places the source in ./repo_workspace on the documented
-# sample runner. Each step enters that directory when it exists and stays put
-# otherwise, so the jobs work under either layout. PATH additions are
+# Every step needs a `name`: the platform rejects a bare `- uses:` step, which
+# a GitHub workflow allows. The checkout lands directly in the working
+# directory, so no step changes into a subdirectory. PATH additions are
 # re-exported per step because they do not survive the step boundary.
+#
+# No sandbox can be built on this runner. The job container drops
+# CAP_SYS_ADMIN from its bounding set, so neither the job user nor root can
+# create a namespace — bubblewrap installs from apt but cannot run, and no
+# flavor, container image or `options:` value changes that.
+#
+# Two consequences shape what runs here:
+#   - UT runs ci:ut:core, the repository's own sandbox-free layer: ci:ut minus
+#     the @sciencediscovery/runner package, whose tests execute real
+#     bubblewrap.
+#   - There is no E2E job. `pnpm ci:e2e` starts the full stack, and the Runner
+#     refuses to serve when the sandbox is unusable, so the stack never becomes
+#     healthy. That is the product declining to execute agent code without
+#     isolation, not a CI defect to work around.
+#
+# Both gaps are covered by .github/workflows/ci.yml, whose runner allows
+# unprivileged user namespaces and so runs the full ci:ut and the mocked
+# journeys.
 
 name: CI
 
@@ -45,41 +62,39 @@ jobs:
   ut:
     runs-on: ubuntu-latest
     steps:
-      - uses: checkout-action@0.0.1
+      - name: Checkout
+        uses: checkout
 
       - name: Provision the runner
         run: |
           set -eu
-          if [ -d repo_workspace ]; then cd repo_workspace; fi
-          bash .ci/provision-runner.sh --sandbox
+          bash .ci/provision-runner.sh
 
       - name: Run UT
         run: |
           set -eu
           export PATH="$HOME/.local/node/bin:$HOME/.local/share/pnpm:$HOME/.local/bin:$PATH"
-          if [ -d repo_workspace ]; then cd repo_workspace; fi
           # Both defaults live inside the .ci image only. The runtime directory
           # stays outside the checkout so the Runner sandbox never mounts over
           # it.
           export CI_RESULTS_DIR="$PWD/.ci-results"
           export CI_RUNTIME_DIR="$HOME/ci-runtime-ut"
-          pnpm ci:ut
+          pnpm ci:ut:core
 
       - name: Report UT results
         run: |
           # No artifact upload action exists here, so the log is the record.
-          if [ -d repo_workspace ]; then cd repo_workspace; fi
-          tail -n 40 .ci-results/ut/run.log 2>/dev/null || echo "no run.log produced"
+          tail -n 40 .ci-results/ut-core/run.log 2>/dev/null || echo "no run.log produced"
 
   st:
     runs-on: ubuntu-latest
     steps:
-      - uses: checkout-action@0.0.1
+      - name: Checkout
+        uses: checkout
 
       - name: Provision the runner
         run: |
           set -eu
-          if [ -d repo_workspace ]; then cd repo_workspace; fi
           bash .ci/provision-runner.sh
 
       # The hermetic agent loop drives a scripted local endpoint and performs a
@@ -88,57 +103,10 @@ jobs:
         run: |
           set -eu
           export PATH="$HOME/.local/node/bin:$HOME/.local/share/pnpm:$HOME/.local/bin:$PATH"
-          if [ -d repo_workspace ]; then cd repo_workspace; fi
           export CI_RESULTS_DIR="$PWD/.ci-results"
           export CI_RUNTIME_DIR="$HOME/ci-runtime-st"
           pnpm ci:st
 
       - name: Report ST results
         run: |
-          if [ -d repo_workspace ]; then cd repo_workspace; fi
           tail -n 40 .ci-results/st/run.log 2>/dev/null || echo "no run.log produced"
-
-  e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: checkout-action@0.0.1
-
-      - name: Provision the runner
-        run: |
-          set -eu
-          if [ -d repo_workspace ]; then cd repo_workspace; fi
-          bash .ci/provision-runner.sh --sandbox
-
-      - name: Run mocked E2E
-        run: |
-          set -eu
-          export PATH="$HOME/.local/node/bin:$HOME/.local/share/pnpm:$HOME/.local/bin:$PATH"
-          if [ -d repo_workspace ]; then cd repo_workspace; fi
-          export CI_RESULTS_DIR="$PWD/.ci-results"
-          export CI_RUNTIME_DIR="$HOME/ci-runtime-e2e"
-          pnpm ci:e2e
-
-      - name: Report the E2E outcome
-        run: |
-          # Playwright exits 0 on a skip, so a green job can still hide a
-          # journey that never executed. Print the counts and every title that
-          # did not pass.
-          if [ -d repo_workspace ]; then cd repo_workspace; fi
-          results=.ci-results/e2e/test-results/results.json
-          if [ ! -f "$results" ]; then echo "no results.json produced"; exit 0; fi
-          node -e '
-            const fs = require("node:fs");
-            const report = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            const stats = report.stats;
-            const notPassed = [];
-            const walk = (suite) => {
-              for (const spec of suite.specs ?? []) {
-                const status = spec.tests?.[0]?.results?.[0]?.status ?? "unknown";
-                if (!spec.ok || status === "skipped") notPassed.push(`${status} - ${spec.title}`);
-              }
-              for (const child of suite.suites ?? []) walk(child);
-            };
-            for (const suite of report.suites ?? []) walk(suite);
-            console.log(`passed ${stats.expected} | skipped/blocked ${stats.skipped} | failed ${stats.unexpected} | flaky ${stats.flaky}`);
-            for (const entry of notPassed) console.log(`  not passed: ${entry}`);
-          ' "$results"
