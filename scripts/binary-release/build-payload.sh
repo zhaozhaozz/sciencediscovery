@@ -94,8 +94,15 @@ assert_requirements_clean() { # <requirements file>
   local requirements="$1" pins hashes
   pins="$(grep -Ec '^[A-Za-z0-9._-]+==' "$requirements" || true)"
   hashes="$(grep -c -- '--hash=sha256:' "$requirements" || true)"
-  if [[ "$pins" -ne 201 || "$hashes" -ne 2427 ]]; then
-    echo "The requirements export changed: expected 201 pins and 2427 hashes, found $pins pins and $hashes hashes." >&2
+  # Re-baselined 2026-08-23 from 201 pins / 2427 hashes. The gateway declares
+  # only mcp and httpx now, so the closure is 31 packages: !181
+  # (node-native-agent-loop) moved the agent loop, model clients and MCP client
+  # to the Node control plane, and !184 (node-native-web-providers) removed the
+  # last deerflow-harness seam, taking langchain, langgraph and fastapi with
+  # them. uvicorn and sse-starlette survive as transitive dependencies of mcp.
+  # Update these counts only after confirming a dependency change was intended.
+  if [[ "$pins" -ne 31 || "$hashes" -ne 333 ]]; then
+    echo "The requirements export changed: expected 31 pins and 333 hashes, found $pins pins and $hashes hashes." >&2
     exit 1
   fi
   if grep -nE '(^|[[:space:]])(--index-url|--extra-index-url|--find-links|-e)([[:space:]]|$)|[[:alpha:]][[:alnum:]+.-]*://|[[:space:]]@[[:space:]]' "$requirements" >&2; then
