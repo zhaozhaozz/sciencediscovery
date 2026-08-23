@@ -217,19 +217,27 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # The single-file release binaries. scripts/package-binary-release.sh cross
-  # builds: an x86_64 host produces both artifacts, because the Node and CPython
-  # runtimes come from pinned manifests and the gateway's Python dependencies
-  # resolve as target-platform wheels. No arm64 runner is needed.
+  # The single-file release binaries, each built on its own architecture.
   #
-  # The four-entry smoke gate boots the packaged app, which spawns the
-  # bubblewrap runner, so it only applies to the artifact this host can execute.
-  # The script gates the native x86_64 build and reports that the aarch64 one
-  # was not run — cross-architecture verification would need a native worker.
+  # The script can cross build, but the four-entry smoke gate can only boot an
+  # artifact the host can execute. Building natively means both architectures
+  # are gated rather than one shipped unverified, which is what a release
+  # binary needs — the gate spawns the packaged bubblewrap runner and exercises
+  # the four entry points end to end.
   binary:
-    name: Binary release (x86_64 + aarch64)
-    runs-on: ubuntu-latest
+    name: Binary release (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    strategy:
+      # One architecture failing must not cancel the other: which of the two
+      # broke is the first thing worth knowing.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
@@ -256,14 +264,14 @@ jobs:
           zstd --version
 
       - name: Build both architectures
-        run: bash scripts/package-binary-release.sh --arch all --output dist/binary-release
+        run: bash scripts/package-binary-release.sh --arch ${{ matrix.arch }} --output dist/binary-release
 
       - name: Report the artifacts
         if: always()
         run: |
           ls -lh dist/binary-release 2>/dev/null || { echo "no artifacts produced"; exit 0; }
           {
-            echo "### Binary release"
+            echo "### Binary release (${{ matrix.arch }})"
             echo
             echo '```'
             ls -lh dist/binary-release
@@ -274,7 +282,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: binary-release
+          name: binary-release-${{ matrix.arch }}
           path: dist/binary-release
           if-no-files-found: warn
           retention-days: 7

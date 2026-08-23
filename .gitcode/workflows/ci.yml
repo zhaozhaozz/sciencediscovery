@@ -111,16 +111,19 @@ jobs:
         run: |
           tail -n 40 .ci-results/st/run.log 2>/dev/null || echo "no run.log produced"
 
-  # The single-file release binaries. The script cross builds, so this x64
-  # runner produces both artifacts: the Node and CPython runtimes come from
-  # pinned manifests and the gateway's Python dependencies resolve as
-  # target-platform wheels.
+  # The x86_64 release binary only, and deliberately not aarch64.
+  #
+  # A release binary should be built and gated on the architecture it targets.
+  # This pool has no arm64 runner — `runs-on: [ubuntu-latest, arm64, medium]`
+  # is accepted and then fails to schedule with HTTP 404 — so an aarch64 build
+  # here could only be cross built and never executed. Shipping an unverified
+  # artifact is worse than not producing one, so aarch64 is left to
+  # .github/workflows/ci.yml, which builds each architecture on its own runner.
   #
   # --skip-smoke because the four-entry gate boots the packaged app, which
-  # spawns the bubblewrap runner, and no sandbox can be built here. The
-  # artifacts are therefore unverified: this job proves the packaging pipeline
-  # still assembles, not that the binary runs. .github/workflows/ci.yml runs
-  # the same script with the gate active on its native artifact.
+  # spawns the bubblewrap runner, and no sandbox can be built in this container.
+  # This job therefore proves the packaging pipeline still assembles; GitHub
+  # proves the binary runs.
   binary:
     runs-on: ubuntu-latest
     steps:
@@ -147,7 +150,7 @@ jobs:
         run: |
           set -eu
           export PATH="$HOME/.local/node/bin:$HOME/.local/share/pnpm:$HOME/.local/bin:$PATH"
-          bash scripts/package-binary-release.sh --arch all --skip-smoke --output dist/binary-release
+          bash scripts/package-binary-release.sh --arch x86_64 --skip-smoke --output dist/binary-release
 
       - name: Report the artifacts
         run: |
