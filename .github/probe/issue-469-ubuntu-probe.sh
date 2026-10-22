@@ -82,6 +82,28 @@ sibling = subprocess.run(
     capture_output=True, text=True)
 print(f"PROBE_SIBLING_PY {label} code={sibling.returncode} out={sibling.stdout.strip()} err={sibling.stderr.strip()}")
 
+visible = subprocess.run(
+    ["python3", "-c",
+     "import os,sys\n"
+     "pid=sys.argv[1]\n"
+     "names=('cmdline','comm','maps','stat','status','wchan','loginuid','cwd','root')\n"
+     "for name in names:\n"
+     " path=f'/proc/{pid}/{name}'\n"
+     " try:\n"
+     "  with open(path,'rb') as handle:\n"
+     "   data=handle.read(180)\n"
+     "  shown=data.replace(b'\\x00',b'|').decode('utf-8','replace').replace('\\n',' ')[:160]\n"
+     "  print(f'{name} ok {shown}')\n"
+     " except OSError as error:\n"
+     "  print(f'{name} ERR {error.errno} {error.strerror}')\n",
+     str(proc.pid)],
+    capture_output=True, text=True)
+print(f"PROBE_VISIBLE {label} code={visible.returncode}")
+for line in visible.stdout.splitlines():
+    print(f"PROBE_VISIBLE {label} {line}")
+if visible.stderr.strip():
+    print(f"PROBE_VISIBLE_ERR {label} {visible.stderr.strip()}")
+
 for shell in ("/bin/sh", "/bin/dash", "/bin/bash"):
     if not os.path.exists(shell):
         print(f"PROBE_SIBLING_SH {label} shell={shell} missing")

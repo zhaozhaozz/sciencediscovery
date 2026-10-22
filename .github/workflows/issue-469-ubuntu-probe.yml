@@ -27,25 +27,3 @@ jobs:
           PROBE_TMP_ROOT: /tmp
           PROBE_BASE: ${{ github.workspace }}/.tmp/issue-469-probe
         run: bash .github/probe/issue-469-ubuntu-probe.sh
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.19.0
-          cache: pnpm
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      - name: Run the prune unit test on this commit and on main
-        run: |
-          set +e
-          node --import tsx --test packages/executor/src/remote-compute-prune.test.ts
-          fix_exit=$?
-          echo "PROBE_TEST commit=fix exit=${fix_exit}"
-          git checkout 7ee6c1d0bcc8374062364d51b3f4dfdf87a1396d -- packages/executor/src/remote-compute.ts packages/executor/src/remote-compute-prune.test.ts
-          node --import tsx --test packages/executor/src/remote-compute-prune.test.ts
-          main_exit=$?
-          echo "PROBE_TEST commit=main exit=${main_exit}"
-          exit 0
