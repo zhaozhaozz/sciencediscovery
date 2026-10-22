@@ -27,3 +27,17 @@ jobs:
           PROBE_TMP_ROOT: /tmp
           PROBE_BASE: ${{ github.workspace }}/.tmp/issue-469-probe
         run: bash .github/probe/issue-469-ubuntu-probe.sh
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - name: Install and build the executor dependency tree
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @sciencediscovery/executor... build
+
+      - name: Run remote runner prune tests
+        run: node --import tsx --test packages/executor/src/remote-compute-prune.test.ts
