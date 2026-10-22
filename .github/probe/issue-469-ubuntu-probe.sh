@@ -33,6 +33,7 @@ if command -v readlink >/dev/null 2>&1; then
   readlink --version 2>&1 | head -n 3 | sed 's/^/PROBE_READLINK version=/' || true
 fi
 echo "PROBE_TOOLS sh=$(command -v sh || true) dash=$(command -v dash || true) bash=$(command -v bash || true)"
+echo "PROBE_APPLET sleep=$(readlink -f "$(command -v sleep)" 2>/dev/null || echo missing) bash=$(readlink -f "$(command -v bash)" 2>/dev/null || echo missing)"
 dpkg -l | awk '/^ii +(coreutils|gnu-coreutils|rust-coreutils|coreutils-from-)/ {print "PROBE_PKG "$2" "$3}'
 
 run_one() {
@@ -207,5 +208,73 @@ mkdir -p "$base" "$tmp_root"
 # places the unit test. The workspace directory stays on the root disk.
 run_one "tmp" "$tmp_root/case"
 run_one "workspace" "$base/workspace"
+
+# /bin/sleep on Ubuntu 26.04 is a uutils multi-call binary. A copy whose
+# argv0 is not "sleep" exits immediately, so a later readlink sees a zombie.
+# A copied bash running `sleep 30` stays the 64-hex executable either way.
+python3 - "$base/live" "$busy_name" <<'PY'
+import os, shutil, subprocess, sys, time
+root, busy_name = sys.argv[1:3]
+os.makedirs(root, exist_ok=True)
+copied = os.path.join(root, busy_name)
+shutil.copy("/bin/bash", copied)
+os.chmod(copied, 0o700)
+open(os.path.join(root, "a" * 64), "w").close()
+open(os.path.join(root, "c" * 64), "w").close()
+# A single simple command is exec'd by bash, which would replace this copy
+# with /usr/bin/sleep. The background wait keeps this file as the executable.
+child = subprocess.Popen([copied, "-c", "sleep 30 & wait"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+seen = None
+deadline = time.time() + 2
+while time.time() < deadline:
+    try:
+        seen = os.readlink(f"/proc/{child.pid}/exe")
+    except OSError as error:
+        seen = f"ERR {error.errno} {error.strerror}"
+    if seen == copied:
+        break
+    time.sleep(0.02)
+status = open(f"/proc/{child.pid}/status", encoding="utf-8", errors="replace").read().splitlines()[:3]
+print(f"PROBE_LIVE parent pid={child.pid} poll={child.poll()} seen={seen}")
+print("PROBE_LIVE parent_status " + " | ".join(status))
+sibling = subprocess.run(
+    ["python3", "-c",
+     "import os,sys\n"
+     "pid=sys.argv[1]\n"
+     "try:\n"
+     " print('exe '+os.readlink(f'/proc/{pid}/exe'))\n"
+     "except OSError as error:\n"
+     " print(f'exe ERR {error.errno} {error.strerror}')\n"
+     "try:\n"
+     " data=open(f'/proc/{pid}/cmdline','rb').read(180).replace(b'\\x00',b'|')\n"
+     " print('cmdline '+data.decode('utf-8','replace'))\n"
+     "except OSError as error:\n"
+     " print(f'cmdline ERR {error.errno} {error.strerror}')\n"
+     "try:\n"
+     " print(next(line for line in open(f'/proc/{pid}/status',encoding='utf-8',errors='replace') if line.startswith('State:')))\n"
+     "except OSError as error:\n"
+     " print(f'status ERR {error.errno} {error.strerror}')\n",
+     str(child.pid)],
+    capture_output=True, text=True)
+print(f"PROBE_LIVE sibling {sibling.stdout.strip()} {sibling.stderr.strip()}")
+script = r'''
+set -eu
+cd "$1" || exit 0
+for candidate in *; do
+  case "$candidate" in *[!0-9a-f]*) continue ;; esac
+  [ "${#candidate}" -eq 64 ] || continue
+  [ "$candidate" = "$2" ] && continue
+  busy=$(for process in /proc/[0-9]*; do readlink "$process/exe" 2>/dev/null || true; done)
+  printf '%s\n' "$busy" | grep -Fq -- "/$candidate" && continue
+  rm -f -- "$candidate" && printf 'pruned %s\n' "$candidate"
+done
+exit 0
+'''
+result = subprocess.run(["/bin/sh", "-c", script, "prune", root, "a" * 64], capture_output=True, text=True)
+print(f"PROBE_LIVE script code={result.code if False else result.returncode} kept={busy_name in os.listdir(root)} poll={child.poll()} stdout={result.stdout.strip()}")
+if child.poll() is None:
+    child.kill()
+    child.wait(timeout=5)
+PY
 rm -rf "$tmp_root" "$base"
 echo "PROBE_DONE"
