@@ -25,6 +25,7 @@ import {
   type JourneyRun,
 } from "./helpers/journeys.ts";
 import { realModelApiVariant, realModelThinking } from "./helpers/real-model-thinking.ts";
+import { measureSession, writeCaseMetrics, type CaseMeasurements } from "./helpers/case-measurements.ts";
 import { collectFinalDelivery } from "./helpers/real-delivery.ts";
 import { deliveryFailureMessage, requiredArtifacts } from "./helpers/real-delivery.mjs";
 import { mainRunChain } from "./helpers/run-chain.ts";
@@ -293,6 +294,7 @@ test("desktop literature review: adult vs pediatric liver immune pathways with a
   let configuredLitSources: string[] = [];
   let originallyEnabledSpecialists: string[] = [];
   let finalDelivery: Awaited<ReturnType<typeof collectFinalDelivery>> | undefined;
+  let measurements: CaseMeasurements | undefined;
   // A cleanup failure must be reported on its own, never in place of the
   // assertion or run error that actually made the case fail.
   let primaryError: unknown;
@@ -448,6 +450,8 @@ test("desktop literature review: adult vs pediatric liver immune pathways with a
           }));
         }
 
+        // Measure when generation ends: a stack lost later in the case cannot erase it.
+        measurements = await measureSession(page.request, info, fixture!.session.id);
         if (!runId) throw new Error("The run chain produced no final Run");
         const result = await collectFinalDelivery(page, fixture!.session.id, runId, run.id, [
           reviewName, countsName, "pathway_enrichment_bar_chart.png", "pathway_enrichment_bar_chart.svg",
@@ -618,6 +622,8 @@ test("desktop literature review: adult vs pediatric liver immune pathways with a
       }
       metrics.generation_usage = await drbApi(page, `/api/sessions/${encodeURIComponent(fixture.session.id)}/usage`)
         .catch(() => null);
+      // literature-immune-liver-metrics.json is diagnostic; the case table reads this.
+      await writeCaseMetrics(page.request, info, fixture.session.id, { measurements });
     }
     // Restore the built-in specialist toggles even when the run or an
     // assertion failed, so the shared catalog is left as it was found.

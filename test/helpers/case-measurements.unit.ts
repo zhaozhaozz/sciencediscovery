@@ -69,4 +69,10 @@ test("case-metrics.json holds the plan identity and numbers only", async t => {
   await writeCaseMetrics(request({}), testInfo(dir, 1_000).info, "s");
   assert.deepEqual(JSON.parse(readFileSync(join(dir, "case-metrics.json"), "utf8")),
     { schema_version: 1, case: id, key: `${id}@linux/amd64#jiuwenswarm`, measurements: {} });
+  // Measurements taken when generation ended are written as they are, without a second read.
+  const silent = { get: async () => { throw new Error("no request expected"); } } as never;
+  const early = testInfo(dir, 1_000);
+  await writeCaseMetrics(silent, early.info, "s", { measurements: { generation_output_tokens: 5, tool_calls: 0 } });
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "case-metrics.json"), "utf8")).measurements, { generation_output_tokens: 5, tool_calls: 0 });
+  assert.deepEqual(early.timeouts, []);
 });

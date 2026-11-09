@@ -120,6 +120,9 @@ test("PUCT-COMPRESS documented text compression search", {
       }
       await new Promise(resolve => setTimeout(resolve, 10_000));
     }
+    // Measure when the main run and its searches end: a stack lost later cannot erase it.
+    if (complete) metrics.measurements = await measureSession(page.request, info, fixture.session.id,
+      { evolveRunIds: searches.map(search => search.id) });
     expect(complete, "Main run and background search must finish within the run budget").toBe(true);
     const search = [...searches].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1)!;
     metrics.search = search;
@@ -199,8 +202,9 @@ test("PUCT-COMPRESS documented text compression search", {
         if (["pending", "running"].includes(search.status)) await page.request.post(`${apiBaseUrl()}/api/evolve/runs/${search.id}/stop`, { headers }).catch(() => {});
       }
       if (runId) await page.request.post(`${apiBaseUrl()}${prefix}/runs/${runId}/cancel`, { headers }).catch(() => {});
-      // Shared numeric measurements join this case's only metrics document.
-      metrics.measurements = await measureSession(page.request, info, fixture.session.id,
+      // Shared numeric measurements join this case's only metrics document;
+      // a case that ended before its searches finished is measured here.
+      metrics.measurements ??= await measureSession(page.request, info, fixture.session.id,
         { evolveRunIds: searches.map(search => search.id) });
     }
     await save("evolve-metrics.json", metrics);

@@ -38,6 +38,7 @@ import {
   type DesktopFixture,
   type DesktopRun,
 } from "./helpers/desktop-evolve.ts";
+import { writeCaseMetrics } from "./helpers/case-measurements.ts";
 import { positiveNumber } from "./helpers/deepresearchbench.ts";
 import { evolutionScorecard } from "./helpers/evolve-result.mjs";
 
@@ -521,6 +522,8 @@ test("desktop /evolve-design reaches three PUCT expansions on an LLM-SRBench pro
           headers: { authorization: `Bearer ${process.env.E2E_API_TOKEN?.trim() ?? ""}` },
         }).catch(() => undefined);
       }
+      // desktop-evolve-metrics.json is diagnostic; the case table reads this.
+      await writeCaseMetrics(page.request, info, fixture.session.id, { evolveRunIds: searches.map(search => search.id) });
     }
     await cleanupDesktopFixture(fixture);
   }

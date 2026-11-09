@@ -98,6 +98,8 @@ for (const sample of drbSamples) {
         ({ automatic_wake: Boolean(automaticWake), error, id, queue_order: queueOrder, status }));
       metrics.run_status = terminal;
       metrics.generation_duration_ms = Date.now() - started;
+      // Measure when generation ends: a stack lost during evaluation cannot erase it.
+      metrics.measurements = await measureSession(page.request, testInfo, fixture.session.id);
       const delivery = await collectFinalDelivery(page, fixture.session.id, runId, metrics.initial_run_id);
       metrics.delivery = delivery;
       metrics.run_error = delivery.run_error;
@@ -135,8 +137,9 @@ for (const sample of drbSamples) {
           if (metrics.shutdown.status !== "stopped") metrics.cleanup_error = `Session cleanup ${metrics.shutdown.status}`;
         }
         metrics.generation_usage = await drbApi(page, `/api/sessions/${fixture.session.id}/usage`).catch(() => null);
-        // Shared numeric measurements join this case's only metrics document.
-        metrics.measurements = await measureSession(page.request, testInfo, fixture.session.id);
+        // Shared numeric measurements join this case's only metrics document;
+        // a case that ended before its generation finished is measured here.
+        metrics.measurements ??= await measureSession(page.request, testInfo, fixture.session.id);
         const details = await drbApi<Array<any>>(page, `/api/sessions/${fixture.session.id}/subagents`).catch(() => []);
         await writeFile(testInfo.outputPath("child-trajectories.json"), JSON.stringify(details, null, 2));
         metrics.tool_errors = details.flatMap(c => (c.steps ?? []).filter((s: any) => s.kind === "tool" && s.status === "failed")

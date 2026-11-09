@@ -141,6 +141,8 @@ test("TC-E2E-01 research team with custom Specialist and MCP signoff", { tag: ["
       terminal = stopped.status === "stopped";
     }
     metrics.generation_duration_ms = Date.now() - started;
+    // Measure when generation ends: a stack lost during evaluation cannot erase it.
+    metrics.measurements = await measureSession(page.request, info, fixture.session.id);
     metrics.budget_exceeded = metrics.run_status === "budget_exhausted";
     metrics.cancel_requested = metrics.budget_exceeded;
     // Session shutdown records cancel outcome in metrics.shutdown; HTTP status is not always available.
@@ -209,8 +211,9 @@ test("TC-E2E-01 research team with custom Specialist and MCP signoff", { tag: ["
         if (metrics.shutdown.status !== "stopped") metrics.cleanup_error = `Session cleanup ${metrics.shutdown.status}`;
       }
       metrics.usage = await api(`${prefix}/usage`).catch(() => null);
-      // Shared numeric measurements join this case's only metrics document.
-      metrics.measurements = await measureSession(page.request, info, fixture.session.id);
+      // Shared numeric measurements join this case's only metrics document;
+      // a case that ended before its generation finished is measured here.
+      metrics.measurements ??= await measureSession(page.request, info, fixture.session.id);
       children = await api<any[]>(`${prefix}/subagents`).catch(() => children);
     }
     // timed_out must stay distinct from delivery failure; only remap leftover running.

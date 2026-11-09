@@ -53,9 +53,13 @@ function planEntries(): unknown[] {
 /**
  * Write `case-metrics.json`, the only metrics document of a case that has no
  * benchmark, team or evolve metrics of its own: the plan identity and numbers.
+ * A case that already measured its Session when generation ended passes that
+ * result, so a stack lost later in the case cannot erase it.
  */
-export async function writeCaseMetrics(request: APIRequestContext, info: TestInfo, sessionId: string): Promise<void> {
-  const measurements = await measureSession(request, info, sessionId);
+export async function writeCaseMetrics(request: APIRequestContext, info: TestInfo, sessionId: string,
+  options: { evolveRunIds?: string[]; measurements?: CaseMeasurements } = {}): Promise<void> {
+  const measurements = options.measurements
+    ?? await measureSession(request, info, sessionId, { evolveRunIds: options.evolveRunIds });
   try {
     const identity = caseIdentity({ source: relative(root, info.file).replaceAll("\\", "/"),
       project: info.project.name, titlePath: info.titlePath }, planEntries());

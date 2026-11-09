@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -309,4 +309,17 @@ test('the DRB projection publishes the judge-call total, not the judge ledger', 
   const doc = JSON.parse(text);
   assert.deepEqual(doc.execution_metrics, { generated_tokens: 70006, judge_tokens: 42345, total_tokens: 90006, tool_calls: 12 });
   assert.deepEqual(doc.evaluation, { status: 'completed', overall_score: 0.5 });
+});
+
+test('every planned real spec feeds the shared case measurements', () => {
+  // Biomni publishes complete measurements of its own and keeps its gate path.
+  const ownMeasurements = new Set(['test/biomnibench-da-swarm.spec.ts']);
+  const real = readdirSync(join(repository, 'test')).filter(name => name.endsWith('.spec.ts')).map(name => `test/${name}`)
+    .map(path => ({ path, source: readFileSync(join(repository, path), 'utf8') }))
+    // A spec whose every real declaration is quarantined is in no plan.
+    .filter(({ source }) => source.split('\n').some(line => line.includes('@model:real') && !line.includes('@status:quarantined')));
+  assert.ok(real.length >= 10, real.map(({ path }) => path).join(', '));
+  const unmeasured = real.filter(({ path, source }) => !ownMeasurements.has(path)
+    && !/from ["']\.\/helpers\/case-measurements\.ts["']/.test(source)).map(({ path }) => path);
+  assert.deepEqual(unmeasured, [], 'a new real spec must record its Session measurements before cleanup');
 });

@@ -493,7 +493,9 @@ The table reads the staged projection, whose `execution_metrics` keep only
 these numbers, so every measurement is computed before staging. Judge tokens
 fall back to the sum of `evaluation.judge_calls[].usage.total_tokens` only when
 every recorded call reports one. Real cases with a Session collect shared
-`measurements` before cleanup through `test/helpers/case-measurements.ts`:
+`measurements` through `test/helpers/case-measurements.ts` when generation
+ends, so a stack lost during evaluation cannot erase them, or before cleanup
+when the case ended earlier:
 generated and total tokens from `GET /api/sessions/:id/usage` when every
 invocation is reported with all three token counts, and tool calls as distinct
 `trace.id`/`toolCallId` values in the Session's run, subagent and evolve event
@@ -503,6 +505,9 @@ These fields join the case's existing benchmark, team or evolve metrics; other
 cases write `case-metrics.json` with their plan `case` id and tagged `key`.
 A case matched by two metrics documents shows no measurements, so each case
 keeps exactly one. Collection never fails a case or spends its time budget.
+Every planned real spec except BiomniBench-DA, which records its own
+measurements, must use this collector; `.ci/case-execution.test.mjs` fails
+when a new one does not.
 
 ## Coverage reporting
 
